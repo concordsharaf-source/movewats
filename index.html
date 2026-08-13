@@ -273,8 +273,14 @@
             background: #dc3545;
         }
         @media (max-width: 500px) {
-            .container { padding: 15px; }
-            .flex-row .btn { min-width: 60px; font-size: 12px; padding: 8px 12px; }
+            .container {
+                padding: 15px;
+            }
+            .flex-row .btn {
+                min-width: 60px;
+                font-size: 12px;
+                padding: 8px 12px;
+            }
         }
     </style>
 </head>
@@ -286,9 +292,9 @@
 
         <div class="note">
             ⏳ الخطة المجانية: رسالة واحدة كل 60 ثانية
-            <span id="statusBadge" style="float:left;">
-                <span class="status-dot status-disconnected" id="statusDot"></span>
-                <span id="statusText" style="font-size:12px;color:#333;">جاري التحقق...</span>
+            <span style="float:left;font-size:12px;color:#333;">
+                <span class="status-dot status-connected" id="statusDot"></span>
+                <span id="statusText">متصل ✅</span>
             </span>
         </div>
 
@@ -429,7 +435,7 @@
         }
 
         // =============================================================
-        // 2. إرسال رسالة (عادي أو رد)
+        // 2. إرسال رسالة (عادي أو رد) عبر api.php
         // =============================================================
 
         async function sendMessage(to, text, replyTo = null) {
@@ -546,7 +552,6 @@
             phoneInput.value = from;
             replyHint.textContent = `↩️ سترد على: ${from} (معرف: ${msgId.substring(0, 8)}...)`;
             showResult(`✅ تم تحديد الرسالة للرد عليها`, 'success');
-            // تمرير للردود
             document.getElementById('replyToId').value = msgId;
         };
 
@@ -565,7 +570,7 @@
 
                     if (msgs.length === 0) {
                         messagesContainer.innerHTML =
-                        `<div class="empty-msg">📭 لا توجد رسائل واردة بعد</div>`;
+                            `<div class="empty-msg">📭 لا توجد رسائل واردة بعد</div>`;
                         return;
                     }
 
@@ -592,11 +597,11 @@
                     messagesContainer.innerHTML = html;
                 } else {
                     messagesContainer.innerHTML =
-                    `<div class="empty-msg">⚠️ خطأ في تحميل الرسائل: ${data.message || ''}</div>`;
+                        `<div class="empty-msg">⚠️ خطأ في تحميل الرسائل: ${data.message || ''}</div>`;
                 }
             } catch (e) {
                 messagesContainer.innerHTML =
-                `<div class="empty-msg">❌ خطأ في الاتصال بالخادوم: ${e.message}</div>`;
+                    `<div class="empty-msg">❌ خطأ في الاتصال بالخادوم: ${e.message}</div>`;
             }
         }
 
@@ -627,7 +632,7 @@
                     showResult(`⚠️ ${data.message || 'لا توجد جهات اتصال'}`, 'error');
                 }
             } catch (e) {
-                showResult('❌ فشل جلب جهات الاتصال', 'error');
+                showResult('❌ فشل جلب جهات الاتصال: ' + e.message, 'error');
             }
         }
 
@@ -654,20 +659,19 @@
                     showResult(`⚠️ ${data.message || 'لا توجد مجموعات'}`, 'error');
                 }
             } catch (e) {
-                showResult('❌ فشل جلب المجموعات', 'error');
+                showResult('❌ فشل جلب المجموعات: ' + e.message, 'error');
             }
         }
 
-        // عند اختيار جهة من القائمة
+        document.getElementById('fetchContactsBtn').addEventListener('click', fetchContacts);
+        document.getElementById('fetchGroupsBtn').addEventListener('click', fetchGroups);
+
         listSelect.addEventListener('change', function() {
             if (this.value) {
                 phoneInput.value = this.value;
                 showResult(`✅ تم اختيار: ${this.options[this.selectedIndex].text}`, 'success');
             }
         });
-
-        document.getElementById('fetchContactsBtn').addEventListener('click', fetchContacts);
-        document.getElementById('fetchGroupsBtn').addEventListener('click', fetchGroups);
 
         // =============================================================
         // 7. مسح الرسائل
@@ -686,7 +690,6 @@
                     showResult('❌ فشل المسح', 'error');
                 }
             } catch (e) {
-                // محاولة المسح عبر api.php
                 try {
                     const resp = await fetch(`${API_URL}?action=clear_messages`);
                     const data = await resp.json();
@@ -708,7 +711,6 @@
 
         document.getElementById('refreshMessagesBtn').addEventListener('click', fetchMessages);
 
-        // تحديث تلقائي
         if (refreshInterval) clearInterval(refreshInterval);
         refreshInterval = setInterval(fetchMessages, 10000);
 
@@ -738,13 +740,11 @@
         // =============================================================
 
         document.addEventListener('DOMContentLoaded', function() {
-            // تنسيق الرقم الأولي
             if (phoneInput.value && !phoneInput.value.includes('@')) {
                 phoneInput.value = phoneInput.value + '@s.whatsapp.net';
             }
             fetchMessages();
             checkStatus();
-            // فحص الحالة كل 30 ثانية
             setInterval(checkStatus, 30000);
         });
 
