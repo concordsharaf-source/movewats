@@ -81,13 +81,21 @@ if ($action === 'get_messages') {
     if (file_exists($file)) {
         $content = file_get_contents($file);
         $messages = json_decode($content, true) ?? [];
-        // نعرض آخر 20 رسالة فقط (الأحدث في الأعلى)
         $messages = array_reverse($messages);
         $messages = array_slice($messages, 0, 20);
         echo json_encode(['success' => true, 'data' => $messages]);
     } else {
         echo json_encode(['success' => true, 'data' => []]);
     }
+    exit;
+}
+
+// ============================================================
+// 5. حالة الجلسة
+// ============================================================
+if ($action === 'status') {
+    $result = callWasenderAPI('https://www.wasenderapi.com/api/status');
+    echo json_encode($result);
     exit;
 }
 
