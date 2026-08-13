@@ -1,16 +1,16 @@
 <?php
 // ============================================================
-// webhook.php - استقبال الرسائل الواردة
+// webhook.php - استقبال الرسائل الواردة (نسخة معدلة بالكامل)
 // ============================================================
 
 // 🔴 التوكن الخاص بك
 $TOKEN = 'b750fdc9152f2462146603f298ff64dd2ef309598ab09e8f79442cab2192ea6f';
 
-// 🔴 السكرت (Secret) الخاص بك
-$WEBHOOK_SECRET = 'b9e9d10515ac8bac41bd8286a9f8617d';
+// 🔴 اقرأ السر من متغيرات البيئة (آمن) أو استخدم القيمة الافتراضية
+$WEBHOOK_SECRET = getenv('WEBHOOK_SECRET') ?: 'b9e9d10515ac8bac41bd8286a9f8617d';
 
 // ============================================================
-// 1. دالة التحقق من التوقيع
+// 1. دالة التحقق من التوقيع (بدون تسجيل خروج مبكر)
 // ============================================================
 function verifySignature($payload, $signature) {
     global $WEBHOOK_SECRET;
@@ -27,18 +27,19 @@ function verifySignature($payload, $signature) {
 $input = file_get_contents('php://input');
 $signature = $_SERVER['HTTP_X_WEBHOOK_SIGNATURE'] ?? '';
 
-// تسجيل الطلب
+// تسجيل الطلب للسجلات (للتتبع)
 file_put_contents('webhook_log.txt', date('Y-m-d H:i:s') . " - " . $input . "\n", FILE_APPEND);
 
-// التحقق من التوقيع
+// ⚠️ التحقق من التوقيع (إذا فشل، نسجل الخطأ ونرد بـ 401)
 if (!verifySignature($input, $signature)) {
+    file_put_contents('webhook_log.txt', "❌ فشل التحقق من التوقيع\n", FILE_APPEND);
     http_response_code(401);
     echo json_encode(['error' => 'Invalid signature']);
     exit;
 }
 
 // ============================================================
-// 3. معالجة البيانات
+// 3. معالجة البيانات (فقط إذا نجح التحقق)
 // ============================================================
 $data = json_decode($input, true);
 
@@ -51,6 +52,7 @@ if (isset($data['event'])) {
         $from = $msg['key']['remoteJid'] ?? 'غير معروف';
         $msgId = $msg['key']['id'] ?? '';
         
+        // استخراج النص (يدعم عدة أنواع من الرسائل)
         $text = '';
         if (isset($msg['message']['conversation'])) {
             $text = $msg['message']['conversation'];
@@ -58,6 +60,10 @@ if (isset($data['event'])) {
             $text = $msg['message']['extendedTextMessage']['text'];
         } elseif (isset($msg['message']['imageMessage']['caption'])) {
             $text = '📸 [صورة] ' . $msg['message']['imageMessage']['caption'];
+        } elseif (isset($msg['message']['videoMessage']['caption'])) {
+            $text = '🎥 [فيديو] ' . $msg['message']['videoMessage']['caption'];
+        } elseif (isset($msg['message']['documentMessage']['fileName'])) {
+            $text = '📄 [مستند] ' . $msg['message']['documentMessage']['fileName'];
         } else {
             $text = '📎 [وسائط]';
         }
@@ -70,6 +76,7 @@ if (isset($data['event'])) {
             $messages = json_decode($content, true) ?? [];
         }
 
+        // إضافة الرسالة الجديدة في البداية (الأحدث أولاً)
         array_unshift($messages, [
             'id' => $msgId,
             'from' => $from,
@@ -78,17 +85,19 @@ if (isset($data['event'])) {
             'is_replied' => false
         ]);
 
+        // الاحتفاظ بآخر 100 رسالة فقط (لتجنب كبر حجم الملف)
         if (count($messages) > 100) {
             $messages = array_slice($messages, 0, 100);
         }
 
+        // حفظ الملف مع تنسيق جميل
         file_put_contents($messagesFile, json_encode($messages, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
         file_put_contents('webhook_log.txt', "✅ تم تخزين رسالة من {$from}\n", FILE_APPEND);
     }
 }
 
 // ============================================================
-// 4. الرد للمنصة
+// 4. الرد للمنصة (إلزامي)
 // ============================================================
 http_response_code(200);
 echo json_encode(['status' => 'received']);
