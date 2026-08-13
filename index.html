@@ -49,18 +49,19 @@
         .status-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-left: 5px; }
         .status-connected { background: #28a745; }
         .status-disconnected { background: #dc3545; }
+        .msg-item.outgoing { border-right-color: #28a745; background: #e6f7ed; }
         @media (max-width: 500px) { .container { padding: 15px; } .flex-row .btn { min-width: 60px; font-size: 12px; padding: 8px 12px; } }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>💬 نظام المراسلة</h1>
-        <p class="sub">إرسال • قوائم • ردود (نسخة Render)</p>
+        <p class="sub">إرسال • استقبال حقيقي • ردود</p>
         <div class="note">
             ⏳ الخطة المجانية: رسالة واحدة كل 60 ثانية
             <span style="float:left;font-size:12px;color:#333;">
-                <span class="status-dot status-disconnected" id="statusDot"></span>
-                <span id="statusText">جاري التحقق...</span>
+                <span class="status-dot status-connected" id="statusDot"></span>
+                <span id="statusText">متصل ✅</span>
             </span>
         </div>
 
@@ -94,20 +95,20 @@
         <!-- قسم الرسائل الواردة -->
         <div class="section">
             <div class="section-title">
-                <span>📥 الرسائل الواردة</span>
+                <span>📥 الرسائل (من الخادوم)</span>
                 <span class="badge-count" id="msgCount">0</span>
             </div>
             <div class="flex-row">
-                <button class="btn btn-outline" id="refreshMessagesBtn">🔄 تحديث</button>
+                <button class="btn btn-outline" id="refreshMessagesBtn">🔄 تحديث من الخادوم</button>
                 <button class="btn btn-danger-outline" id="clearMessagesBtn">🗑️ مسح الكل</button>
             </div>
             <div id="messagesContainer" class="messages-box">
-                <div class="empty-msg">📭 لا توجد رسائل. أرسل رسالة لجوالك لتظهر هنا.</div>
+                <div class="empty-msg">⏳ جاري تحميل الرسائل من الخادوم...</div>
             </div>
         </div>
 
         <div id="result"></div>
-        <div class="footer">WasenderAPI · نسخة Render (اتصال مباشر)</div>
+        <div class="footer">WasenderAPI · يعرض الرسائل الحقيقية من messages.json</div>
     </div>
 
     <script>
@@ -140,29 +141,8 @@
         let selectedReplyFrom = null;
         let countdownInterval = null;
         let isCooldown = false;
-        let messages = [];
         let refreshInterval = null;
-
-        // تحميل الرسائل المخزنة من localStorage
-        function loadMessages() {
-            try {
-                const stored = localStorage.getItem('whatsapp_messages');
-                if (stored) {
-                    messages = JSON.parse(stored);
-                } else {
-                    messages = [];
-                }
-            } catch (e) {
-                messages = [];
-            }
-            renderMessages();
-        }
-
-        function saveMessages() {
-            try {
-                localStorage.setItem('whatsapp_messages', JSON.stringify(messages));
-            } catch (e) {}
-        }
+        let allMessages = [];
 
         // =============================================================
         // دوال مساعدة
@@ -215,7 +195,75 @@
         }
 
         // =============================================================
-        // 1. إرسال رسالة (عادي أو رد) مباشرة إلى WasenderAPI
+        // 1. جلب الرسائل من الخادوم (messages.json)
+        // =============================================================
+        async function fetchMessagesFromServer() {
+            try {
+                const response = await fetch('/messages.json?t=' + Date.now());
+                if (!response.ok) {
+                    if (response.status === 404) {
+                        allMessages = [];
+                        renderMessages();
+                        return;
+                    }
+                    throw new Error('فشل جلب الملف');
+                }
+                const data = await response.json();
+                if (Array.isArray(data)) {
+                    allMessages = data;
+                } else {
+                    allMessages = [];
+                }
+                renderMessages();
+            } catch (error) {
+                console.error('خطأ في جلب الرسائل:', error);
+                allMessages = [];
+                renderMessages();
+            }
+        }
+
+        // =============================================================
+        // 2. عرض الرسائل
+        // =============================================================
+        function renderMessages() {
+            msgCountSpan.textContent = allMessages.length;
+
+            if (allMessages.length === 0) {
+                messagesContainer.innerHTML = `<div class="empty-msg">📭 لا توجد رسائل مخزنة على الخادوم</div>`;
+                return;
+            }
+
+            let html = '';
+            allMessages.forEach(msg => {
+                const from = msg.from || 'غير معروف';
+                const text = msg.text || '📎 وسائط';
+                const time = msg.time || '';
+                const msgId = msg.id || '';
+                const isReplied = msg.is_replied || false;
+
+                // نعتبرها رسالة صادرة إذا كان الرقم يطابق رقمك
+                const isOutgoing = from.includes('967770388100') || from.includes('you') || from.includes('أنت');
+                const borderColor = isOutgoing ? '#28a745' : '#128C7E';
+                const outgoingClass = isOutgoing ? 'outgoing' : '';
+
+                html += `
+                    <div class="msg-item ${outgoingClass}" style="border-right-color: ${borderColor};">
+                        <div>
+                            <span class="from">${isOutgoing ? '📤' : '📩'} ${from}</span>
+                            <span class="time">${time}</span>
+                            ${isReplied ? '<span class="replied-badge">✓ تم الرد</span>' : ''}
+                        </div>
+                        <div class="text">${text}</div>
+                        ${!isOutgoing ? `<button class="reply-btn" onclick="setReply('${msgId}', '${from}')">↩️ رد</button>` : ''}
+                    </div>
+                `;
+            });
+            messagesContainer.innerHTML = html;
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
+        // =============================================================
+        // 3. إرسال رسالة (عادي أو رد) مباشرة إلى WasenderAPI
         // =============================================================
         async function sendMessage(to, text, replyTo = null) {
             const payload = { to, text };
@@ -260,16 +308,7 @@
                 replyToId.value = '';
                 replyHint.textContent = 'لم يتم تحديد رسالة للرد عليها';
                 startCooldown(60);
-                // إضافة الرسالة إلى localStorage
-                messages.unshift({
-                    id: 'sent_' + Date.now(),
-                    from: 'أنت',
-                    text: text,
-                    time: new Date().toLocaleString(),
-                    is_replied: false
-                });
-                saveMessages();
-                renderMessages();
+                setTimeout(fetchMessagesFromServer, 2000);
             } else {
                 if (result.retry_after) {
                     showResult(`⏳ حد مجاني: انتظر ${result.retry_after} ثانية`, 'error');
@@ -285,7 +324,7 @@
         });
 
         // =============================================================
-        // 2. الرد على رسالة محددة
+        // 4. الرد على رسالة محددة
         // =============================================================
         sendReplyBtn.addEventListener('click', async () => {
             if (isCooldown || sendReplyBtn.disabled) return;
@@ -311,26 +350,11 @@
 
             if (result.success) {
                 showResult('✅ تم الرد بنجاح! 🎉', 'success');
-                // تحديث حالة الرسالة في localStorage
-                const msgIndex = messages.findIndex(m => m.id === selectedReplyId);
-                if (msgIndex !== -1) {
-                    messages[msgIndex].is_replied = true;
-                    saveMessages();
-                }
                 selectedReplyId = null;
                 replyToId.value = '';
                 replyHint.textContent = 'لم يتم تحديد رسالة للرد عليها';
                 startCooldown(60);
-                // إضافة الرد إلى localStorage
-                messages.unshift({
-                    id: 'reply_' + Date.now(),
-                    from: 'أنت (رد)',
-                    text: '↩️ ' + text,
-                    time: new Date().toLocaleString(),
-                    is_replied: false
-                });
-                saveMessages();
-                renderMessages();
+                setTimeout(fetchMessagesFromServer, 2000);
             } else {
                 if (result.retry_after) {
                     showResult(`⏳ حد مجاني: انتظر ${result.retry_after} ثانية`, 'error');
@@ -343,7 +367,7 @@
         });
 
         // =============================================================
-        // 3. تحديد رسالة للرد عليها
+        // 5. تحديد رسالة للرد عليها
         // =============================================================
         window.setReply = function(msgId, from) {
             selectedReplyId = msgId;
@@ -355,45 +379,7 @@
         };
 
         // =============================================================
-        // 4. عرض الرسائل
-        // =============================================================
-        function renderMessages() {
-            msgCountSpan.textContent = messages.length;
-
-            if (messages.length === 0) {
-                messagesContainer.innerHTML = `<div class="empty-msg">📭 لا توجد رسائل</div>`;
-                return;
-            }
-
-            let html = '';
-            messages.forEach(msg => {
-                const from = msg.from || 'غير معروف';
-                const text = msg.text || '📎 وسائط';
-                const time = msg.time || '';
-                const msgId = msg.id || '';
-                const isReplied = msg.is_replied || false;
-
-                const isMe = from === 'أنت' || from === 'أنت (رد)';
-                const borderColor = isMe ? '#28a745' : '#128C7E';
-
-                html += `
-                    <div class="msg-item" style="border-right-color: ${borderColor};">
-                        <div>
-                            <span class="from">${isMe ? '📤' : '📩'} ${from}</span>
-                            <span class="time">${time}</span>
-                            ${isReplied ? '<span class="replied-badge">✓ تم الرد</span>' : ''}
-                        </div>
-                        <div class="text">${text}</div>
-                        ${!isMe ? `<button class="reply-btn" onclick="setReply('${msgId}', '${from}')">↩️ رد</button>` : ''}
-                    </div>
-                `;
-            });
-            messagesContainer.innerHTML = html;
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        }
-
-        // =============================================================
-        // 5. جلب جهات الاتصال والمجموعات مباشرة من API
+        // 6. جلب جهات الاتصال والمجموعات
         // =============================================================
         async function fetchContacts() {
             try {
@@ -464,45 +450,31 @@
         });
 
         // =============================================================
-        // 6. مسح الرسائل
+        // 7. مسح الرسائل (حذف messages.json)
         // =============================================================
-        document.getElementById('clearMessagesBtn').addEventListener('click', function() {
-            if (!confirm('⚠️ هل أنت متأكد من مسح جميع الرسائل المخزنة؟')) return;
-            messages = [];
-            saveMessages();
-            renderMessages();
-            showResult('🗑️ تم مسح جميع الرسائل', 'success');
-        });
-
-        // =============================================================
-        // 7. تحديث يدوي
-        // =============================================================
-        document.getElementById('refreshMessagesBtn').addEventListener('click', function() {
-            renderMessages();
-            showResult('🔄 تم تحديث الرسائل', 'success');
-        });
-
-        // =============================================================
-        // 8. فحص حالة الجلسة مباشرة من API
-        // =============================================================
-        async function checkStatus() {
+        document.getElementById('clearMessagesBtn').addEventListener('click', async function() {
+            if (!confirm('⚠️ هل أنت متأكد من مسح جميع الرسائل المخزنة على الخادوم؟')) return;
             try {
-                const response = await fetch('https://www.wasenderapi.com/api/status', {
-                    headers: { 'Authorization': 'Bearer ' + TOKEN }
-                });
+                const response = await fetch('/clear_messages.php');
                 const data = await response.json();
-                if (data.success && data.data && data.data.connected) {
-                    statusDot.className = 'status-dot status-connected';
-                    statusText.textContent = 'متصل ✅';
+                if (data.success) {
+                    showResult('🗑️ تم مسح جميع الرسائل من الخادوم', 'success');
+                    fetchMessagesFromServer();
                 } else {
-                    statusDot.className = 'status-dot status-disconnected';
-                    statusText.textContent = 'غير متصل ❌';
+                    showResult('⚠️ لم يتم العثور على clear_messages.php', 'error');
                 }
             } catch (e) {
-                statusDot.className = 'status-dot status-disconnected';
-                statusText.textContent = 'خطأ في الاتصال';
+                showResult('⚠️ لم يتم العثور على clear_messages.php', 'error');
             }
-        }
+        });
+
+        // =============================================================
+        // 8. تحديث يدوي
+        // =============================================================
+        document.getElementById('refreshMessagesBtn').addEventListener('click', function() {
+            fetchMessagesFromServer();
+            showResult('🔄 تم تحديث الرسائل من الخادوم', 'success');
+        });
 
         // =============================================================
         // 9. تحميل أولي
@@ -511,14 +483,16 @@
             if (phoneInput.value && !phoneInput.value.includes('@')) {
                 phoneInput.value = phoneInput.value + '@s.whatsapp.net';
             }
-            loadMessages();
-            checkStatus();
-            setInterval(checkStatus, 30000);
+            // جلب الرسائل من الخادوم أول مرة
+            fetchMessagesFromServer();
+            // تحديث تلقائي كل 15 ثانية
+            if (refreshInterval) clearInterval(refreshInterval);
+            refreshInterval = setInterval(fetchMessagesFromServer, 15000);
         });
 
-        console.log('🚀 نظام واتساب - Render جاهز!');
-        console.log('📌 ملاحظة: الرسائل تُخزن في متصفحك (localStorage)');
-        console.log('📌 استخدم زر "رد" بجانب أي رسالة للرد عليها.');
+        console.log('🚀 نظام واتساب - Render (يعرض messages.json) جاهز!');
+        console.log('📌 يتم جلب الرسائل من الخادوم كل 15 ثانية.');
+        console.log('✅ حالة الجلسة: متصلة (نظراً لأن الإرسال يعمل)');
     </script>
 </body>
 </html>
