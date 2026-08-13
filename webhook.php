@@ -6,11 +6,11 @@
 // 🔴 التوكن الخاص بك
 $TOKEN = 'b750fdc9152f2462146603f298ff64dd2ef309598ab09e8f79442cab2192ea6f';
 
-// 🔴 اقرأ السر من متغيرات البيئة (آمن) أو استخدم القيمة الافتراضية
-$WEBHOOK_SECRET = getenv('WEBHOOK_SECRET') ?: 'b9e9d10515ac8bac41bd8286a9f8617d';
+// 🔴 السر الثابت (مباشر) - تم التأكد منه
+$WEBHOOK_SECRET = 'b9e9d10515ac8bac41bd8286a9f8617d';
 
 // ============================================================
-// 1. دالة التحقق من التوقيع (بدون تسجيل خروج مبكر)
+// 1. دالة التحقق من التوقيع
 // ============================================================
 function verifySignature($payload, $signature) {
     global $WEBHOOK_SECRET;
@@ -30,7 +30,7 @@ $signature = $_SERVER['HTTP_X_WEBHOOK_SIGNATURE'] ?? '';
 // تسجيل الطلب للسجلات (للتتبع)
 file_put_contents('webhook_log.txt', date('Y-m-d H:i:s') . " - " . $input . "\n", FILE_APPEND);
 
-// ⚠️ التحقق من التوقيع (إذا فشل، نسجل الخطأ ونرد بـ 401)
+// التحقق من التوقيع
 if (!verifySignature($input, $signature)) {
     file_put_contents('webhook_log.txt', "❌ فشل التحقق من التوقيع\n", FILE_APPEND);
     http_response_code(401);
